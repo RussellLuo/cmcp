@@ -1,5 +1,7 @@
 # cMCP
 
+![cmcp logo](img/cmcp-logo-small.png)
+
 `cmcp` is a command-line utility that helps you interact with [MCP][1] servers. It's basically `curl` for MCP servers.
 
 
