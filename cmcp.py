@@ -3,10 +3,11 @@ import asyncio
 from contextlib import asynccontextmanager
 import json
 import os
+from pathlib import Path
 import re
 import shlex
 import sys
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 from mcp import ClientSession, StdioServerParameters
@@ -155,6 +156,89 @@ def print_json(result: BaseModel) -> None:
         print(highlighted)
 
 
+def load_config(config_path: Optional[str] = None) -> dict[str, Any]:
+    """Load configuration from JSON file.
+
+    If config_path is specified, load from that path.
+    Otherwise, try to load from .cmcp/mcp.json or ~/.cmcp/mcp.json.
+    """
+    if config_path:
+        config_file = Path(config_path)
+        if not config_file.exists():
+            raise ValueError(f"Config file not found: {config_path}")
+    else:
+        # Try .cmcp/mcp.json first
+        local_config = Path(".cmcp/mcp.json")
+        home_config = Path.home() / ".cmcp" / "mcp.json"
+
+        if local_config.exists():
+            config_file = local_config
+        elif home_config.exists():
+            config_file = home_config
+        else:
+            raise ValueError(
+                "No config file found. Please specify --config or create "
+                ".cmcp/mcp.json or ~/.cmcp/mcp.json"
+            )
+
+    with open(config_file, "r") as f:
+        config = json.load(f)
+
+    return config
+
+
+def get_server_from_config(
+    server_name: str, config: dict[str, Any]
+) -> tuple[str, dict[str, Any], dict[str, str]]:
+    """Extract cmd_or_url, params, and metadata from config for a given server name.
+
+    Args:
+        server_name: The server name (without the leading ':')
+        config: The configuration dictionary
+
+    Returns:
+        A tuple of (cmd_or_url, params, metadata)
+    """
+    mcp_servers = config.get("mcpServers", {})
+
+    if server_name not in mcp_servers:
+        raise ValueError(
+            f"Server '{server_name}' not found in config. "
+            f"Available servers: {', '.join(mcp_servers.keys())}"
+        )
+
+    server_config = mcp_servers[server_name]
+
+    # Check if it's a local server (stdio) or remote server (http)
+    if "command" in server_config:
+        # Local server (stdio transport)
+        command = server_config["command"]
+        args = server_config.get("args", [])
+
+        # Build the command string
+        cmd_parts = [command] + args
+        cmd_or_url = " ".join(shlex.quote(part) for part in cmd_parts)
+
+        # Environment variables become metadata for stdio transport
+        metadata = server_config.get("env", {})
+    elif "url" in server_config:
+        # Remote server (http transport)
+        cmd_or_url = server_config["url"]
+
+        # HTTP headers become metadata for http transport
+        metadata = server_config.get("headers", {})
+    else:
+        raise ValueError(
+            f"Invalid server config for '{server_name}': "
+            "must have either 'command' (for stdio) or 'url' (for http)"
+        )
+
+    # No params from config (params come from command line)
+    params = {}
+
+    return cmd_or_url, params, metadata
+
+
 def parse_items(items: list[str]) -> tuple[dict[str, Any], dict[str, str]]:
     """Parse items in the form of `key:value`, `key=string_value` or `key:=json_value`."""
 
@@ -196,7 +280,7 @@ def main() -> None:
     )
     parser.add_argument(
         "cmd_or_url",
-        help="The command (stdio-transport) or URL (sse-transport) to connect to the MCP server",
+        help="The command (stdio-transport), URL (http-transport), or server name (starting with ':') to connect to the MCP server",
     )
     parser.add_argument("method", help="The method to be invoked")
     parser.add_argument(
@@ -213,6 +297,10 @@ or the metadata values (in the form of `key:value`)\
         action="store_true",
         help="Enable verbose output showing JSON-RPC request/response",
     )
+    parser.add_argument(
+        "--config",
+        help="Path to config file (defaults to .cmcp/mcp.json or ~/.cmcp/mcp.json)",
+    )
     args = parser.parse_args()
 
     if args.method not in METHODS:
@@ -221,12 +309,30 @@ or the metadata values (in the form of `key:value`)\
         )
 
     try:
-        params, metadata = parse_items(args.items)
+        # Check if cmd_or_url is a server name reference (starts with ':')
+        if args.cmd_or_url.startswith(":"):
+            server_name = args.cmd_or_url[1:]  # Remove the leading ':'
+
+            try:
+                config = load_config(args.config)
+            except ValueError as exc:
+                parser.error(str(exc))
+
+            try:
+                cmd_or_url, params, metadata = get_server_from_config(
+                    server_name, config
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+        else:
+            cmd_or_url = args.cmd_or_url
+            params, metadata = parse_items(args.items)
+
     except ValueError as exc:
         parser.error(str(exc))
 
     client = Client(
-        cmd_or_url=args.cmd_or_url,
+        cmd_or_url=cmd_or_url,
         method=args.method,
         params=params,
         metadata=metadata,
