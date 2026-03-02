@@ -248,6 +248,48 @@ cmcp http://localhost:8000/sse tools/call name=add arguments:='{"a": 1, "b": 2}'
 ```
 
 
+## Using `mcp.json` (Advanced)
+
+For convenience, you can use a configuration file to manage your MCP servers instead of typing the full command or URL each time. By default, `cmcp` looks for `.cmcp/mcp.json` (in the current directory) or `~/.cmcp/mcp.json` (in your home directory).
+
+The configuration follows the standard MCP JSON format, which is also used by [Cursor](https://cursor.com/docs/context/mcp#using-mcpjson), [Claude Code](https://code.claude.com/docs/en/mcp#project-scope), [FastMCP](https://gofastmcp.com/integrations/mcp-json-configuration), and other MCP clients.
+
+Example configuration file:
+
+```json
+{
+  "mcpServers": {
+    "local-server": {
+      "command": "python",
+      "args": ["mcp-server.py"],
+      "env": {
+        "API_KEY": "value"
+      }
+    },
+    "remote-server": {
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "API_KEY": "value"
+      }
+    }
+  }
+}
+```
+
+Use a configured server by prefixing its name with `:`:
+
+```bash
+# Use the local-server from config
+cmcp :local-server tools/list
+
+# Use the remote-server from config
+cmcp :remote-server tools/call name=add arguments:='{"a": 1, "b": 2}'
+
+# Use a custom config file
+cmcp --config /path/to/config.json :local-server tools/list
+```
+
+
 ## Related Projects
 
 [cA2A][3]: A command-line utility for interacting with A2A agents.
