@@ -181,23 +181,26 @@ def load_config(config_path: Optional[str] = None) -> dict[str, Any]:
                 ".cmcp/mcp.json or ~/.cmcp/mcp.json"
             )
 
-    with open(config_file, "r") as f:
-        config = json.load(f)
+    try:
+        with open(config_file, "r") as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in config file {config_file}: {e}")
 
     return config
 
 
 def get_server_from_config(
     server_name: str, config: dict[str, Any]
-) -> tuple[str, dict[str, Any], dict[str, str]]:
-    """Extract cmd_or_url, params, and metadata from config for a given server name.
+) -> tuple[str, dict[str, str]]:
+    """Extract cmd_or_url and metadata from config for a given server name.
 
     Args:
         server_name: The server name (without the leading ':')
         config: The configuration dictionary
 
     Returns:
-        A tuple of (cmd_or_url, params, metadata)
+        A tuple of (cmd_or_url, metadata)
     """
     mcp_servers = config.get("mcpServers", {})
 
@@ -234,9 +237,7 @@ def get_server_from_config(
         )
 
     # No params from config (params come from command line)
-    params = {}
-
-    return cmd_or_url, params, metadata
+    return cmd_or_url, metadata
 
 
 def parse_items(items: list[str]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -276,7 +277,29 @@ def parse_items(items: list[str]) -> tuple[dict[str, Any], dict[str, str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="A command-line utility for interacting with MCP servers."
+        description="A command-line utility for interacting with MCP servers.",
+        epilog="""
+Examples:
+  # STDIO transport
+  cmcp 'python server.py' tools/list
+  cmcp 'python server.py' tools/call name=add arguments:='{"a": 1, "b": 2}'
+
+  # HTTP transport
+  cmcp http://localhost:8000/mcp tools/list
+  cmcp http://localhost:8000/mcp tools/call name=add arguments:='{"a": 1, "b": 2}'
+
+  # With metadata (environment variables for STDIO, headers for HTTP)
+  cmcp 'python server.py' API_KEY:secret tools/list
+  cmcp http://localhost:8000/mcp Authorization:Bearer_token tools/list
+
+  # Using mcp.json config (server name starts with ':')
+  cmcp :local-server tools/list
+  cmcp :remote-server tools/call name=add arguments:='{"a": 1, "b": 2}'
+
+  # Verbose mode
+  cmcp -v 'python server.py' tools/list
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "cmd_or_url",
@@ -319,11 +342,17 @@ or the metadata values (in the form of `key:value`)\
                 parser.error(str(exc))
 
             try:
-                cmd_or_url, params, metadata = get_server_from_config(
+                cmd_or_url, config_metadata = get_server_from_config(
                     server_name, config
                 )
             except ValueError as exc:
                 parser.error(str(exc))
+
+            # Parse command-line items for params and additional metadata
+            params, cli_metadata = parse_items(args.items)
+
+            # Merge metadata: config metadata as base, CLI metadata overrides
+            metadata = {**config_metadata, **cli_metadata}
         else:
             cmd_or_url = args.cmd_or_url
             params, metadata = parse_items(args.items)
