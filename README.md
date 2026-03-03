@@ -34,9 +34,9 @@ Add required environment variables:
 cmcp COMMAND METHOD ENV_VAR1:value ENV_VAR2:value param1=value param2:='{"arg1": "value"}'
 ```
 
-### Streamable HTTP (or SSE)
+### HTTP (or SSE)
 
-Interact with the Streamable HTTP (or SSE) server:
+Interact with the HTTP (or SSE) server:
 
 ```bash
 cmcp URL METHOD
@@ -146,9 +146,9 @@ Call a tool:
 cmcp 'mcp run server.py' tools/call name=add arguments:='{"a": 1, "b": 2}'
 ```
 
-### Streamable HTTP transport
+### HTTP transport
 
-Run the above MCP server with Streamable HTTP transport:
+Run the above MCP server with HTTP transport:
 
 ```bash
 mcp run server.py -t streamable-http
